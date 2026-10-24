@@ -1,2 +1,6 @@
 #!/bin/sh
-launchctl load /Library/LaunchDaemons/dev.copper.relayserver.plist
+if [ -f /var/jb/Library/LaunchDaemons/dev.copper.relayserver.plist ]; then
+    launchctl load /var/jb/Library/LaunchDaemons/dev.copper.relayserver.plist
+else
+    launchctl load /Library/LaunchDaemons/dev.copper.relayserver.plist
+fi

@@ -1,2 +1,8 @@
 #!/bin/sh
-launchctl unload /Library/LaunchDaemons/dev.copper.relayserver.plist
+if [ -f /var/jb/Library/LaunchDaemons/dev.copper.relayserver.plist ]; then
+    launchctl unload /var/jb/Library/LaunchDaemons/dev.copper.relayserver.plist >/dev/null 2>&1 || true
+else
+    launchctl unload /Library/LaunchDaemons/dev.copper.relayserver.plist >/dev/null 2>&1 || true
+fi
+killall relayserver >/dev/null 2>&1 || true
+exit 0
