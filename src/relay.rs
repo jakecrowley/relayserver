@@ -8,7 +8,6 @@ use tokio::{net::TcpStream, select, sync::Mutex, task::JoinHandle, time::{self, 
 use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
 
 use crate::{base64_encode, c::mg_copy_answer_rs, error::RelayError, nac::generate_validation_data, util::{Resource, ResourceManager}};
-
 const IMAC131_SUFFIXES: &[&str] = &[
     "DNCT", "DNCR", "DNML", "DNMM", "F8QM", "F8QN", "F9RN",
     "FC6M", "FC6N", "FC6P", "FD55", "FD5Y", "FF7L",
@@ -86,6 +85,28 @@ pub fn build_sign_data_response(id: u64) -> serde_json::Value {
     })
 }
 
+const PUSH_TOKEN_KEYS: &[&str] = &["push-token", "pushToken", "push_token", "token"];
+
+fn find_token(scope: Option<&serde_json::Value>) -> Option<String> {
+    let scope = scope?;
+    for key in PUSH_TOKEN_KEYS {
+        if let Some(val) = scope.get(*key) {
+            if let Some(tok) = val.as_str() {
+                if !tok.is_empty() {
+                    return Some(tok.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+pub fn extract_push_token(json: &serde_json::Value) -> Option<String> {
+    // top-level keys first, then the nested `data` object (matches the client)
+    find_token(Some(json))
+        .or_else(|| find_token(json.get("data")))
+}
+
 #[derive(Deserialize, Serialize, Clone)]
 pub struct RelayState {
     pub code: String,
@@ -154,6 +175,17 @@ mod tests {
         assert_eq!(resp["id"], 42);
         assert_eq!(resp["data"], serde_json::json!({}));
         assert_eq!(serde_json::to_string(&resp).unwrap(), r##"{"command":"response","data":{},"id":42}"##);
+    }
+
+    #[test]
+    fn push_token_extraction() {
+        let tok = |json: &str| extract_push_token(&serde_json::from_str::<serde_json::Value>(json).unwrap());
+        assert_eq!(tok(r#"{"command":"get-validation-data","id":1,"data":{"data":"x","push-token":"tok1"}}"#).as_deref(), Some("tok1"));
+        assert_eq!(tok(r#"{"command":"get-validation-data","id":1,"data":{"data":"x","pushToken":"tok2"}}"#).as_deref(), Some("tok2"));
+        assert_eq!(tok(r#"{"command":"get-validation-data","id":1,"push_token":"tok3","data":{"data":"x"}}"#).as_deref(), Some("tok3"));
+        assert_eq!(tok(r#"{"command":"get-validation-data","id":1,"data":{"data":"x"},"token":"tok4"}"#).as_deref(), Some("tok4"));
+        assert_eq!(tok(r#"{"command":"get-validation-data","id":1,"data":{"data":"x"}}"#), None);
+        assert_eq!(tok(r#"{"command":"get-validation-data","id":1}"#), None);
     }
 }
 
@@ -262,7 +294,7 @@ impl RelayResource {
                         },
                         "get-validation-data" => {
                             println!("Generating validation data!");
-                            ws_stream.send(command.respond(CommandData::ValidationData { data: base64_encode(&generate_validation_data().await?) })).await?;
+                            ws_stream.send(command.respond(CommandData::ValidationData { data: base64_encode(&generate_validation_data(None, None).await?) })).await?;
                             println!("Sent validation data!");
                         },
                         "pong" => {},

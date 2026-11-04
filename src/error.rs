@@ -12,6 +12,8 @@ pub enum RelayError {
     RequestError(#[from] reqwest::Error),
     #[error("NAC error: {0}")]
     NacError(u64),
+    #[error("No session-info in validation response")]
+    MissingSessionInfo,
     #[error("Resource Timeout")]
     ResourceTimeout,
     #[error("Resource Failure")]
