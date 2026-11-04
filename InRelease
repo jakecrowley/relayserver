@@ -1,0 +1,36 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+Origin: relayserver
+Label: relayserver
+Suite: stable
+Codename: stable
+Components: main
+Architectures: iphoneos-arm iphoneos-arm64
+Date: Wed, 04 Nov 2026 22:32:34 UTC
+
+SHA256:
+ 32e37f6fa684ddf5b1e9f7d3c7429c7a5e3c3292c26e2c6fbbfe76958b7280c7 907 Packages
+ dfe35be4e894c2e4b37b604b284fd04c9e46e4a21fa0508fc5b41613dc9cba69 440 Packages.gz
+MD5sum:
+ 5d497b9b1eb1513005312e6cbd8ae686 907 Packages
+ c6a6c6b7150300df56c633cf1dc18803 440 Packages.gz
+SHA1:
+ 56a261bfd85c81a269421821ba56c46692b5ec71 907 Packages
+ 2832efeb0d8b47cbf8caa06249cf2959fddd10b0 440 Packages.gz
+-----BEGIN PGP SIGNATURE-----
+
+iQIzBAEBCAAdFiEEDIYj9nuJf0zOXUsuMHIxqwaH4mwFAmrrsoMACgkQMHIxqwaH
+4mylqBAAlDu2yfILt7A+1OTeEio9ZNI9ccFfEoV1HT/d+QOBsqPZvBvPI+rqFpQ4
+W48SyehnLc8qWNdhqSmkPWlaZiKYqPwj9pV3G8c25P9dc7tGBfT0r3ZwA7smcmM/
+qkIPrbEstCICmKk1UiGgpEOCIM4+kkvOHdi5ejMwsbbFPOTfwOq0p3Vbb1OUQ4hJ
+IdEaZDWe40B1ajDl61HsJVgGUqAbao6m/ybt6wpmoJKS6SqBbYCfYBEgqHc4Obbi
+cesN/+oWFqQ+OtPbH2Vbn6dK1/Xd2HnPdfl2LEio5TjY0O74x+ARFlx+P5Z9cg1Y
+VI4wtrrhg5VGUYAqn2OxVSnlforiCOu347oFNFHqaHVXn4kmH63stAdDAgil0N+9
+ToRp04K4eV6jlBV75awDM6xX1fVBLZakIF4nbXdiJVAE/oE9DtU2EYXaJR/7IS+E
+cHhPJSD+6wXDWBhjoTuvy6e3wTx8CtGJinkoalYVmq6I36O8CjflK0RB+AFg01sT
+u5PYZjXOrpRcE0uleXXWZvVV6jUcvats2ohdZVhfViu6qldnzMvU5RBBaB8G3tXk
+X9FotFepbqaWHwsbTLRqO+DwN3sUB1qscNauHxdwz9SlQN6vjkaN4bfaUHKLXtK2
+AcEOlHeur3bqHgYpPj6XAIfbK7aiIjS+Go076l2t4y6wdZH5bWg=
+=Kr+d
+-----END PGP SIGNATURE-----
