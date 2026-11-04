@@ -91,6 +91,29 @@ def parse_index(text):
     return stanzas
 
 
+def run_gpg(args, gnupghome):
+    env = dict(os.environ, GNUPGHOME=gnupghome)
+    return subprocess.run(["gpg", "--batch", "--pinentry-mode", "loopback",
+                           "--passphrase", ""] + args,
+                          env=env, capture_output=True, text=True)
+
+
+def make_gpg_key(gnupghome):
+    """Generate a throwaway RSA key in an isolated GNUPGHOME; return fingerprint."""
+    os.makedirs(gnupghome, mode=0o700)
+    # speed: sign-only RSA key, no expiration, empty passphrase
+    out = run_gpg(["--quick-generate-key", "--batch", "repo-test", "rsa2048",
+                   "sign", "0"], gnupghome)
+    if out.returncode != 0:
+        raise RuntimeError(f"key gen failed: {out.stderr}")
+    listed = run_gpg(["--list-secret-keys",
+                      "--with-colons", "--fingerprint"], gnupghome)
+    for line in listed.stdout.splitlines():
+        if line.startswith("fpr:"):
+            return line.split(":")[9]
+    raise RuntimeError("no fingerprint in listing")
+
+
 class TestRepoGenerator(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="repotest")
@@ -189,6 +212,58 @@ class TestRepoGenerator(unittest.TestCase):
         self.assertEqual(s["Name"], "relay-package")
         self.assertEqual(s["Maintainer"], "Tae Hagen")
         self.assertEqual(s["Description"], "A background server")
+
+
+class TestSigning(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="signtest")
+        self.packages = os.path.join(self.tmp, "pkgs")
+        self.out = os.path.join(self.tmp, "out")
+        self.gnupghome = os.path.join(self.tmp, "gnupghome")
+        os.makedirs(self.packages)
+        make_deb(os.path.join(self.packages, "a.deb"),
+                 "dev.copper.relayserver", "0.0.4")
+        build_repo.build(self.packages, self.out)
+        self.fpr = make_gpg_key(self.gnupghome)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_sign_release_creates_release_gpg(self):
+        build_repo.sign_release(self.out, self.fpr, passphrase="",
+                                gnupghome=self.gnupghome)
+        gpg = os.path.join(self.out, "Release.gpg")
+        self.assertTrue(os.path.isfile(gpg), "Release.gpg written")
+        env = dict(os.environ, GNUPGHOME=self.gnupghome)
+        verify = subprocess.run(
+            ["gpg", "--verify", gpg, os.path.join(self.out, "Release")],
+            env=env, capture_output=True, text=True)
+        self.assertEqual(verify.returncode, 0,
+                         f"verify failed: {verify.stderr}")
+
+    def test_require_sign_fails_without_key(self):
+        empty_home = os.path.join(self.tmp, "empty-home")
+        os.makedirs(empty_home, mode=0o700)
+        with self.assertRaises(SystemExit) as ctx:
+            build_repo.sign_release(self.out, None, passphrase="",
+                                    gnupghome=empty_home, require=True)
+        code = ctx.exception.code
+        self.assertNotEqual(code, 0, "must exit nonzero")
+        self.assertTrue(
+            os.path.isfile(os.path.join(self.out, "Release")),
+            "Release still present")
+        self.assertFalse(
+            os.path.exists(os.path.join(self.out, "Release.gpg")),
+            "no Release.gpg on failed signing")
+
+    def test_signing_optional_by_default(self):
+        empty_home = os.path.join(self.tmp, "empty-home-2")
+        os.makedirs(empty_home, mode=0o700)
+        build_repo.sign_release(self.out, None, passphrase="",
+                                gnupghome=empty_home, require=False)
+        self.assertFalse(
+            os.path.exists(os.path.join(self.out, "Release.gpg")),
+            "no signature when signing not required and no key")
 
 
 if __name__ == "__main__":

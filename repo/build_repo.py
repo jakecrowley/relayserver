@@ -27,6 +27,61 @@ POOL_SUBDIR = "pool/main"
 INDEX_ARCHES = "iphoneos-arm iphoneos-arm64"
 
 
+def first_secret_key_fingerprint(gnupghome=None):
+    """Fingerprint of the first GPG secret key, or None if none exists."""
+    env = dict(os.environ)
+    if gnupghome:
+        env["GNUPGHOME"] = gnupghome
+    out = subprocess.run(["gpg", "--batch", "--list-secret-keys",
+                          "--with-colons", "--fingerprint"],
+                         env=env, capture_output=True, text=True)
+    for line in out.stdout.splitlines():
+        if line.startswith("fpr:"):
+            return line.split(":")[9]
+    return None
+
+
+def sign_release(out_dir, key_id, passphrase, gnupghome=None, require=False):
+    """Write Release.gpg as a detached signature of Release.
+
+    key_id None means auto-discover. With require=True, a missing gpg binary
+    or secret key exits nonzero with an error naming GPG_PRIVATE_KEY (the CI
+    secret), and no Release.gpg is left behind. With require=False and no
+    usable key, signing is skipped silently (local dev path).
+    """
+    release = os.path.join(out_dir, "Release")
+    gpg_out = os.path.join(out_dir, "Release.gpg")
+    if os.path.exists(gpg_out):
+        os.remove(gpg_out)
+
+    env = dict(os.environ)
+    if gnupghome:
+        env["GNUPGHOME"] = gnupghome
+
+    gpg = shutil.which("gpg")
+    key_id = key_id or first_secret_key_fingerprint(gnupghome)
+    if not gpg or not key_id:
+        if require:
+            print("error: signing required but no usable GPG secret key "
+                  "found; set the GPG_PRIVATE_KEY secret (and GPG_PASSPHRASE "
+                  "if the key has a passphrase)", file=sys.stderr)
+            sys.exit(1)
+        return
+
+    cmd = [gpg, "--batch", "--yes", "--default-key", key_id,
+           "--detach-sign", "--output", gpg_out, release]
+    if passphrase:
+        cmd = [gpg, "--batch", "--yes", "--passphrase", passphrase,
+               "--pinentry-mode", "loopback", "--default-key", key_id,
+               "--detach-sign", "--output", gpg_out, release]
+    proc = subprocess.run(cmd, env=env, capture_output=True, text=True)
+    if proc.returncode != 0 or not os.path.isfile(gpg_out):
+        if require:
+            print(f"error: signing failed: {proc.stderr}", file=sys.stderr)
+            sys.exit(1)
+        return
+
+
 def read_deb_control(path):
     """Return the control file of a .deb as an ordered field dict.
 
@@ -150,10 +205,18 @@ def main(argv=None):
     ap.add_argument("--label", default="relayserver")
     ap.add_argument("--suite", default="stable")
     ap.add_argument("--codename", default="stable")
+    ap.add_argument("--require-sign", action="store_true",
+                    help="exit nonzero if Release cannot be signed (CI)")
+    ap.add_argument("--gpg-key", default=None,
+                    help="signing key fingerprint (default: first secret key)")
+    ap.add_argument("--passphrase", default="",
+                    help="GPG passphrase if the key has one")
     args = ap.parse_args(argv)
 
     n = build(args.packages_dir, args.out_dir, origin=args.origin,
               label=args.label, suite=args.suite, codename=args.codename)
+    sign_release(args.out_dir, args.gpg_key, args.passphrase,
+                 require=args.require_sign)
     print(f"OK: {n} package(s) into {args.out_dir}")
 
 
