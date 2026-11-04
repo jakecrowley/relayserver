@@ -1,5 +1,11 @@
 extern crate cc;
 fn main() {
+    // Device (C bindings, MobileGestalt) only builds for the iOS target.
+    // Host builds skip it so pure-Rust unit tests can run via `cargo test --lib`.
+    let is_ios = std::env::var("CARGO_CFG_TARGET_OS").map(|os| os == "ios").unwrap_or(false);
+    if !is_ios {
+        return;
+    }
     let theos = std::env::var("THEOS").unwrap_or_else(|_| "/home/jake/theos".to_string());
     let sdk = format!("{}/sdks/iPhoneOS16.5.sdk", theos);
 

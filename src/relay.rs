@@ -17,16 +17,15 @@ const SERIAL_YEARS: &[u8] = b"CDFGHJKLMNPQRSTUVWX";
 const SERIAL_WEEKS: &[u8] = b"123456789CDFGHJKLMNPQRSTVW";
 const SERIAL_ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ0123456789";
 
-fn random_bytes<const N: usize>() -> [u8; N] {
-    let mut buf = [0u8; N];
-    unsafe {
-        libc::arc4random_buf(buf.as_mut_ptr() as *mut libc::c_void, N);
-    }
-    buf
-}
-
 fn random_index(upper_bound: usize) -> usize {
+    #[cfg(target_os = "ios")]
     let r = unsafe { libc::arc4random_uniform(upper_bound as u32) };
+    #[cfg(not(target_os = "ios"))]
+    let r = {
+        use crate::util::random_bytes;
+        let b = random_bytes::<8>();
+        u64::from_le_bytes(b) % upper_bound as u64
+    };
     r as usize
 }
 
@@ -41,7 +40,7 @@ pub fn generate_hybrid_serial() -> String {
 }
 
 pub fn generate_hybrid_udid() -> String {
-    let mut b = random_bytes::<16>();
+    let mut b = crate::util::random_bytes::<16>();
     b[6] = (b[6] & 0x0f) | 0x40;
     b[8] = (b[8] & 0x3f) | 0x80;
     format!(
@@ -52,6 +51,39 @@ pub fn generate_hybrid_udid() -> String {
         b[8], b[9],
         b[10], b[11], b[12], b[13], b[14], b[15]
     )
+}
+
+pub fn build_activation_payload(serial_number: &str) -> serde_json::Value {
+    serde_json::json!({
+        "Serial": {
+            "activation_randomness": crate::util::random_uuid_uppercase(),
+            "build_version": "22G513",
+            "activation_state": "Unactivated",
+            "device_class": "MacOS",
+            "product_type": "iMac13,1",
+            "product_version": "13.6.4",
+            "serial_number": serial_number,
+            "unique_device_id": serde_json::Value::Null,
+            "activation_device": "MacOS",
+            "ua": serde_json::Value::Null,
+        }
+    })
+}
+
+pub fn build_activate_response(id: u64, serial_number: &str) -> serde_json::Value {
+    serde_json::json!({
+        "command": "response",
+        "data": build_activation_payload(serial_number),
+        "id": id,
+    })
+}
+
+pub fn build_sign_data_response(id: u64) -> serde_json::Value {
+    serde_json::json!({
+        "command": "response",
+        "data": {},
+        "id": id,
+    })
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -75,6 +107,54 @@ pub struct RelayVersions {
     software_build_id: String,
     unique_device_id: String,
     serial_number: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn activation_payload_shape() {
+        let payload = build_activation_payload("C02KL2YKDNCR");
+        let serial = &payload["Serial"];
+        assert_eq!(serial["build_version"], "22G513");
+        assert_eq!(serial["activation_state"], "Unactivated");
+        assert_eq!(serial["device_class"], "MacOS");
+        assert_eq!(serial["product_type"], "iMac13,1");
+        assert_eq!(serial["product_version"], "13.6.4");
+        assert_eq!(serial["serial_number"], "C02KL2YKDNCR");
+        assert_eq!(serial["activation_device"], "MacOS");
+        assert_eq!(serial["unique_device_id"], serde_json::Value::Null);
+        assert_eq!(serial["ua"], serde_json::Value::Null);
+        let r = serial["activation_randomness"].as_str().unwrap();
+        assert_eq!(r.len(), 36);
+        assert!(r.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '-'));
+        assert!(serial.as_object().unwrap().len() == 10);
+    }
+
+    #[test]
+    fn activation_randomness_differs_per_call() {
+        let a = build_activation_payload("C02KL2YKDNCR");
+        let b = build_activation_payload("C02KL2YKDNCR");
+        assert_ne!(a["Serial"]["activation_randomness"], b["Serial"]["activation_randomness"]);
+    }
+
+    #[test]
+    fn activate_response_shape() {
+        let resp = build_activate_response(42, "C02KL2YKDNCR");
+        assert_eq!(resp["command"], "response");
+        assert_eq!(resp["id"], 42);
+        assert_eq!(resp["data"]["Serial"]["serial_number"], "C02KL2YKDNCR");
+    }
+
+    #[test]
+    fn sign_data_response_shape() {
+        let resp = build_sign_data_response(42);
+        assert_eq!(resp["command"], "response");
+        assert_eq!(resp["id"], 42);
+        assert_eq!(resp["data"], serde_json::json!({}));
+        assert_eq!(serde_json::to_string(&resp).unwrap(), r##"{"command":"response","data":{},"id":42}"##);
+    }
 }
 
 #[derive(Deserialize, Serialize)]
