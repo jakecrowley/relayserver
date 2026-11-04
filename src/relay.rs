@@ -52,13 +52,33 @@ pub fn generate_hybrid_udid() -> String {
     )
 }
 
-pub fn resolve_device_identity_with(real_serial: &str, real_udid: Option<&str>, hybrid_serial: &str, hybrid_udid: &str) -> (String, String) {
-    let real_udid_ok = real_udid.map(|u| !u.is_empty()).unwrap_or(false);
-    if !real_serial.is_empty() && real_udid_ok {
-        (real_serial.to_string(), real_udid.unwrap().to_string())
-    } else {
-        (hybrid_serial.to_string(), hybrid_udid.to_string())
+/// Client parity (Relay.swift getIdentifiers): serial = MG SerialNumber (else
+/// hybrid serial), udid = identifierForVendor (else persisted UUID, else hybrid
+/// UDID). Each resolved independently, like the client.
+/// Client parity (Relay.swift getPersistentDeviceUUID): identifierForVendor
+/// uppercased wins; else the persisted UUID; else a fresh uppercase UUID.
+/// Returns (uuid, needs_save) — needs_save is true only for a fresh UUID.
+pub fn get_persistent_device_uuid(identifier_for_vendor: Option<&str>, saved: Option<&str>) -> (String, bool) {
+    if let Some(vendor) = identifier_for_vendor {
+        if !vendor.is_empty() {
+            return (vendor.to_uppercase(), false);
+        }
     }
+    if let Some(saved) = saved {
+        if !saved.is_empty() {
+            return (saved.to_string(), false);
+        }
+    }
+    (crate::util::random_uuid_uppercase(), true)
+}
+
+pub fn resolve_device_identity_with(real_serial: &str, real_udid: Option<&str>, hybrid_serial: &str, hybrid_udid: &str) -> (String, String) {
+    let udid = match real_udid {
+        Some(u) if !u.is_empty() => u.to_string(),
+        _ => hybrid_udid.to_string(),
+    };
+    let serial = if real_serial.is_empty() { hybrid_serial.to_string() } else { real_serial.to_string() };
+    (serial, udid)
 }
 
 pub fn build_activation_payload(serial_number: &str) -> serde_json::Value {
@@ -127,6 +147,8 @@ pub struct RelayResource {
     pub state: Mutex<Option<RelayState>>,
     pub serial_number: String,
     pub unique_device_id: String,
+    /// Client-parity persistent UUID (identifierForVendor or saved UUID).
+    pub persistent_device_uuid: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -198,15 +220,56 @@ mod tests {
     }
 
     #[test]
-    fn identity_falls_back_to_hybrid_when_real_missing() {
-        // stubbed MobileGestalt: real answers empty -> hybrid wins
+    fn identity_matches_client_serial_and_uuid_resolution() {
+        // Client (Relay.swift getIdentifiers/getPersistentDeviceUUID): serial = MG
+        // SerialNumber, udid = identifierForVendor else persisted UUID. Resolved
+        // independently — one falling back must not drag the other with it.
+        let got = resolve_device_identity_with("C02REALSERIAL", Some("AABBCCDD-1234-5678-9ABC-DEF012345678"), "HYBRIDSER", "HYBRIDUDID");
+        assert_eq!(got.0, "C02REALSERIAL");
+        assert_eq!(got.1, "AABBCCDD-1234-5678-9ABC-DEF012345678");
+
+        // real serial present, no identifierForVendor -> real serial + saved UUID
+        let got = resolve_device_identity_with("C02REALSERIAL", None, "HYBRIDSER", "HYBRIDUDID");
+        assert_eq!(got.0, "C02REALSERIAL");
+        assert_eq!(got.1, "HYBRIDUDID");
+
+        // identifierForVendor present but serial missing -> hybrid serial + real UUID
+        let got = resolve_device_identity_with("", Some("AABBCCDD-1234-5678-9ABC-DEF012345678"), "HYBRIDSER", "HYBRIDUDID");
+        assert_eq!(got.0, "HYBRIDSER");
+        assert_eq!(got.1, "AABBCCDD-1234-5678-9ABC-DEF012345678");
+
+        // both missing -> hybrid pair
         let got = resolve_device_identity_with("", None, "HYBRIDSER", "HYBRIDUDID");
         assert_eq!(got.0, "HYBRIDSER");
         assert_eq!(got.1, "HYBRIDUDID");
 
-        let got = resolve_device_identity_with("C02REALSERIAL", Some("AABBCCDD-1234-5678-9ABC-DEF012345678"), "HYBRIDSER", "HYBRIDUDID");
-        assert_eq!(got.0, "C02REALSERIAL");
-        assert_eq!(got.1, "AABBCCDD-1234-5678-9ABC-DEF012345678");
+        // empty ID FV string counts as missing (client: `!vendor.isEmpty`)
+        let got = resolve_device_identity_with("", Some(""), "HYBRIDSER", "HYBRIDUDID");
+        assert_eq!(got.1, "HYBRIDUDID");
+    }
+
+    #[test]
+    fn persistent_device_uuid_matches_client() {
+        // client getPersistentDeviceUUID: identifierForVendor (uppercased) wins
+        let (uuid, save) = get_persistent_device_uuid(Some("aabbccdd-1234-5678-9abc-def012345678"), Some("SAVED"));
+        assert_eq!(uuid, "AABBCCDD-1234-5678-9ABC-DEF012345678");
+        assert!(!save);
+
+        // no FV -> saved value reused
+        let (uuid, save) = get_persistent_device_uuid(None, Some("SAVEDUUID"));
+        assert_eq!(uuid, "SAVEDUUID");
+        assert!(!save);
+
+        // empty FV counts as missing
+        let (uuid, save) = get_persistent_device_uuid(Some(""), Some("SAVEDUUID"));
+        assert_eq!(uuid, "SAVEDUUID");
+        assert!(!save);
+
+        // no FV, no saved -> fresh uppercase UUID, flagged for persistence
+        let (uuid, save) = get_persistent_device_uuid(None, None);
+        assert_eq!(uuid.len(), 36);
+        assert!(uuid.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '-'));
+        assert!(save);
     }
 }
 
@@ -268,9 +331,10 @@ impl Resource for RelayResource {
 
         let serial_number = self.serial_number.clone();
         let unique_device_id = self.unique_device_id.clone();
+        let persistent_device_uuid = self.persistent_device_uuid.clone();
 
         Ok(tokio::spawn(async move {
-            match RelayResource::poll(ws_stream, serial_number, unique_device_id).await {
+            match RelayResource::poll(ws_stream, serial_number, unique_device_id, persistent_device_uuid).await {
                 Ok(_) => {},
                 Err(err) => {
                     println!("error {err}");
@@ -285,6 +349,7 @@ impl RelayResource {
         mut ws_stream: WebSocketStream<MaybeTlsStream<TcpStream>>,
         serial_number: String,
         unique_device_id: String,
+        persistent_device_uuid: String,
     ) -> Result<(), RelayError> {
         let ping_interval = Duration::from_secs(60);
         let mut last_ping = Instant::now();
@@ -305,8 +370,9 @@ impl RelayResource {
                         "get-version-info" => {
                             let uts = uname().unwrap();
                             let real_serial = mg_copy_answer_rs("SerialNumber");
-                            let real_udid = mg_copy_answer_rs("UniqueDeviceID");
-                            let (serial_number, unique_device_id) = resolve_device_identity_with(&real_serial, Some(&real_udid), &serial_number, &unique_device_id);
+                            // Client parity: udid = identifierForVendor/persisted UUID
+                            // (resolved at startup), serial = MG serial else hybrid.
+                            let (serial_number, unique_device_id) = resolve_device_identity_with(&real_serial, Some(&persistent_device_uuid), &serial_number, &unique_device_id);
                             ws_stream.send(command.respond(CommandData::Versions { versions: RelayVersions {
                                 hardware_version: uts.machine().to_str().unwrap().to_string(),
                                 software_name: "iPhone OS".to_string(),
@@ -320,9 +386,8 @@ impl RelayResource {
                             println!("Generating validation data!");
                             let raw: serde_json::Value = serde_json::from_str(&msg).unwrap();
                             let push_token = extract_push_token(&raw);
-                            let real_udid = mg_copy_answer_rs("UniqueDeviceID");
-                            let (_, udid) = resolve_device_identity_with(&mg_copy_answer_rs("SerialNumber"), Some(&real_udid), &serial_number, &unique_device_id);
-                            let data = generate_validation_data(Some(udid), push_token).await?;
+                            // Client parity: getPersistentDeviceUUID, not MG UniqueDeviceID.
+                            let data = generate_validation_data(Some(persistent_device_uuid.clone()), push_token).await?;
                             ws_stream.send(command.respond(CommandData::ValidationData { data: base64_encode(&data) })).await?;
                             println!("Sent validation data!");
                         },
@@ -366,12 +431,14 @@ impl RelayResource {
         state: Option<RelayState>,
         serial_number: String,
         unique_device_id: String,
+        persistent_device_uuid: String,
     ) -> Relay {
         let resource = RelayResource {
             url: Mutex::new(url),
             state: Mutex::new(state),
             serial_number,
             unique_device_id,
+            persistent_device_uuid,
         };
 
         ResourceManager::new(

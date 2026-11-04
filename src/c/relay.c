@@ -50,14 +50,42 @@ int nac_sign(uint64_t val_ctx, const void* data, size_t data_len, void **out_sig
 
 extern CFTypeRef MGCopyAnswer(CFStringRef property);
 
+char* copy_cf_string_to_buf(CFTypeRef cfstring) {
+    size_t malloc_size = 128;
+    char *buf = calloc(1, malloc_size);
+    CFStringGetCString(cfstring, buf, malloc_size, kCFStringEncodingUTF8);
+    return buf;
+}
+
 char* mg_copy_answer(const char* firstProperty) {
     CFStringRef property = CFStringCreateWithCString(kCFAllocatorDefault, firstProperty, kCFStringEncodingUTF8);
     CFTypeRef answer = MGCopyAnswer(property);
     CFRelease(property);
-    
-    size_t malloc_size = 128;
-    char *buildNumberBuf = calloc(1, malloc_size);
-    CFStringGetCString(answer, buildNumberBuf, malloc_size, kCFStringEncodingUTF8);
+    if (!answer) {
+        return copy_cf_string_to_buf(CFSTR(""));
+    }
+    char *result = copy_cf_string_to_buf(answer);
     CFRelease(answer);
-    return buildNumberBuf;
+    return result;
+}
+
+#import <objc/message.h>
+#import <objc/runtime.h>
+
+// Relay.swift getPersistentDeviceUUID: UIDevice.current.identifierForVendor?.uuidString
+// ("" when unavailable; the fallback/persistence logic lives in Rust).
+char* device_identifier_for_vendor(void) {
+    id device = ((id (*)(id, SEL))objc_msgSend)((id)objc_getClass("UIDevice"), sel_registerName("currentDevice"));
+    if (!device) {
+        return copy_cf_string_to_buf(CFSTR(""));
+    }
+    id vendor = ((id (*)(id, SEL))objc_msgSend)(device, sel_registerName("identifierForVendor"));
+    if (!vendor) {
+        return copy_cf_string_to_buf(CFSTR(""));
+    }
+    id uuid_string = ((id (*)(id, SEL))objc_msgSend)(vendor, sel_registerName("uuidString"));
+    if (!uuid_string) {
+        return copy_cf_string_to_buf(CFSTR(""));
+    }
+    return copy_cf_string_to_buf(uuid_string);
 }

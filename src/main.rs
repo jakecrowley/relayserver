@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use base64::engine::general_purpose;
 use base64::Engine;
-use relay::{generate_hybrid_serial, generate_hybrid_udid, Relay, RelayResource, RelayState};
+use relay::{generate_hybrid_serial, generate_hybrid_udid, get_persistent_device_uuid, Relay, RelayResource, RelayState};
 use serde::{Deserialize, Serialize};
 use tokio::{fs, sync::broadcast};
 
@@ -60,11 +60,25 @@ async fn main() {
         .filter(|s| s.len() == 12)
         .unwrap_or_else(generate_hybrid_serial);
 
-    let unique_device_id = config
-        .as_ref()
-        .and_then(|i| i.unique_device_id.clone())
-        .filter(|u| !u.is_empty())
-        .unwrap_or_else(generate_hybrid_udid);
+    // Client parity (getPersistentDeviceUUID): identifierForVendor wins, else
+    // the persisted UUID from config, else a fresh UUID persisted on next write.
+    let identifier_for_vendor = c::device_identifier_for_vendor_rs();
+    let saved = config.as_ref().and_then(|i| i.unique_device_id.clone());
+    let (persistent_device_uuid, needs_uuid_save) =
+        get_persistent_device_uuid(Some(&identifier_for_vendor), saved.as_deref());
+    if needs_uuid_save {
+        println!("Generated persistent device UUID {persistent_device_uuid}; will be saved to config");
+    }
+
+    let unique_device_id = if needs_uuid_save {
+        persistent_device_uuid.clone()
+    } else {
+        config
+            .as_ref()
+            .and_then(|i| i.unique_device_id.clone())
+            .filter(|u| !u.is_empty())
+            .unwrap_or_else(generate_hybrid_udid)
+    };
 
     println!("Using hybrid identity: serial={}, udid={}", serial_number, unique_device_id);
 
@@ -73,6 +87,7 @@ async fn main() {
         config.as_ref().and_then(|i| i.state.clone()),
         serial_number,
         unique_device_id,
+        persistent_device_uuid,
     );
 
     let initial_state = RelayConfig::from_relay(&relay).await;

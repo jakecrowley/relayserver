@@ -85,6 +85,41 @@ mod tests {
         let xml = String::from_utf8(empty).unwrap();
         assert!(!xml.contains("absinthe-udid"));
     }
+
+    #[test]
+    fn validation_headers_match_client() {
+        let base: Vec<(&str, String)> = vec![
+            ("Content-Type", "application/x-apple-plist".into()),
+            ("x-protocol-version", "1630".into()),
+            ("User-Agent", "com.apple.invitation-registration".into()),
+            ("Accept", "*/*".into()),
+            ("Accept-Language", "en-US,en;q=0.9".into()),
+        ];
+        assert_eq!(validation_headers(None), base);
+        // empty token is treated as absent (client: `!pushToken.isEmpty`)
+        assert_eq!(validation_headers(Some("")), base);
+        let with_token = validation_headers(Some("tok"));
+        assert_eq!(with_token.last().unwrap(), &("x-push-token", "tok".to_string()));
+        assert_eq!(with_token.len(), base.len() + 1);
+        assert_eq!(&with_token[..5], &base[..]);
+    }
+}
+
+/// Headers for the initializeValidation POST, matching the client's
+/// ValidationData.swift (including Content-Type: application/x-apple-plist).
+/// x-push-token only when a non-empty token is present.
+pub fn validation_headers(push_token: Option<&str>) -> Vec<(&'static str, String)> {
+    let mut headers: Vec<(&'static str, String)> = vec![
+        ("Content-Type", "application/x-apple-plist".into()),
+        ("x-protocol-version", "1630".into()),
+        ("User-Agent", "com.apple.invitation-registration".into()),
+        ("Accept", "*/*".into()),
+        ("Accept-Language", "en-US,en;q=0.9".into()),
+    ];
+    if let Some(t) = push_token.filter(|t| !t.is_empty()) {
+        headers.push(("x-push-token", t.to_string()));
+    }
+    headers
 }
 
 pub async fn generate_validation_data(udid: Option<String>, push_token: Option<String>) -> Result<Vec<u8>, RelayError> {
@@ -103,13 +138,9 @@ pub async fn generate_validation_data(udid: Option<String>, push_token: Option<S
     let ctx = nac_init_rs(&certs, &mut output_req)?;
 
     let info = build_validation_request_body(&output_req, udid.as_deref())?;
-    let mut activation = client.post("https://identity.ess.apple.com/WebObjects/TDIdentityService.woa/wa/initializeValidation")
-        .header("x-protocol-version", "1630")
-        .header("User-Agent", "com.apple.invitation-registration")
-        .header("Accept", "*/*")
-        .header("Accept-Language", "en-US,en;q=0.9");
-    if let Some(token) = push_token.filter(|t| !t.is_empty()) {
-        activation = activation.header("x-push-token", token);
+    let mut activation = client.post("https://identity.ess.apple.com/WebObjects/TDIdentityService.woa/wa/initializeValidation");
+    for (name, value) in validation_headers(push_token.as_deref()) {
+        activation = activation.header(name, value);
     }
     let activation = activation
         .body(info)
