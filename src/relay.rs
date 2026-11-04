@@ -381,3 +381,24 @@ impl RelayResource {
                 .with_max_times(usize::MAX), None)
     }
 }
+
+#[cfg(test)]
+mod spotcheck {
+    use super::*;
+
+    // Task 5 Step 3: pin serialized wire shapes against the client's Swift
+    // assertions (ActivationPayloadTest/main.swift).
+    #[test]
+    fn serialized_shapes_match_client() {
+        let payload = build_activation_payload("C02KL2YKDNCR");
+        let text = serde_json::to_string(&payload).unwrap();
+        assert!(text.contains(r#""unique_device_id":null"#));
+        assert!(text.contains(r#""ua":null"#));
+        assert!(text.contains(r#""product_type":"iMac13,1""#));
+        assert!(text.contains(r#""build_version":"22G513""#));
+
+        let resp = build_sign_data_response(42);
+        let text = serde_json::to_string(&resp).unwrap();
+        assert!(text.contains(r#""data":{}"#));
+    }
+}
