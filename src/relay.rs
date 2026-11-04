@@ -52,6 +52,15 @@ pub fn generate_hybrid_udid() -> String {
     )
 }
 
+pub fn resolve_device_identity_with(real_serial: &str, real_udid: Option<&str>, hybrid_serial: &str, hybrid_udid: &str) -> (String, String) {
+    let real_udid_ok = real_udid.map(|u| !u.is_empty()).unwrap_or(false);
+    if !real_serial.is_empty() && real_udid_ok {
+        (real_serial.to_string(), real_udid.unwrap().to_string())
+    } else {
+        (hybrid_serial.to_string(), hybrid_udid.to_string())
+    }
+}
+
 pub fn build_activation_payload(serial_number: &str) -> serde_json::Value {
     serde_json::json!({
         "Serial": {
@@ -187,6 +196,18 @@ mod tests {
         assert_eq!(tok(r#"{"command":"get-validation-data","id":1,"data":{"data":"x"}}"#), None);
         assert_eq!(tok(r#"{"command":"get-validation-data","id":1}"#), None);
     }
+
+    #[test]
+    fn identity_falls_back_to_hybrid_when_real_missing() {
+        // stubbed MobileGestalt: real answers empty -> hybrid wins
+        let got = resolve_device_identity_with("", None, "HYBRIDSER", "HYBRIDUDID");
+        assert_eq!(got.0, "HYBRIDSER");
+        assert_eq!(got.1, "HYBRIDUDID");
+
+        let got = resolve_device_identity_with("C02REALSERIAL", Some("AABBCCDD-1234-5678-9ABC-DEF012345678"), "HYBRIDSER", "HYBRIDUDID");
+        assert_eq!(got.0, "C02REALSERIAL");
+        assert_eq!(got.1, "AABBCCDD-1234-5678-9ABC-DEF012345678");
+    }
 }
 
 #[derive(Deserialize, Serialize)]
@@ -283,13 +304,16 @@ impl RelayResource {
                     match command.command.as_str() {
                         "get-version-info" => {
                             let uts = uname().unwrap();
+                            let real_serial = mg_copy_answer_rs("SerialNumber");
+                            let real_udid = mg_copy_answer_rs("UniqueDeviceID");
+                            let (serial_number, unique_device_id) = resolve_device_identity_with(&real_serial, Some(&real_udid), &serial_number, &unique_device_id);
                             ws_stream.send(command.respond(CommandData::Versions { versions: RelayVersions {
                                 hardware_version: uts.machine().to_str().unwrap().to_string(),
                                 software_name: "iPhone OS".to_string(),
                                 software_version: mg_copy_answer_rs("ProductVersion"),
                                 software_build_id: mg_copy_answer_rs("BuildVersion"),
-                                unique_device_id: unique_device_id.clone(),
-                                serial_number: serial_number.clone(),
+                                unique_device_id,
+                                serial_number,
                             } })).await?;
                         },
                         "get-validation-data" => {
