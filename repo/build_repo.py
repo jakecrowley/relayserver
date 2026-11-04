@@ -42,7 +42,7 @@ def first_secret_key_fingerprint(gnupghome=None):
 
 
 def sign_release(out_dir, key_id, passphrase, gnupghome=None, require=False):
-    """Write Release.gpg as a detached signature of Release.
+    """Write ASCII-armored Release.gpg and clearsigned InRelease.
 
     key_id None means auto-discover. With require=True, a missing gpg binary
     or secret key exits nonzero with an error naming GPG_PRIVATE_KEY (the CI
@@ -51,8 +51,11 @@ def sign_release(out_dir, key_id, passphrase, gnupghome=None, require=False):
     """
     release = os.path.join(out_dir, "Release")
     gpg_out = os.path.join(out_dir, "Release.gpg")
-    if os.path.exists(gpg_out):
-        os.remove(gpg_out)
+    inrelease_out = os.path.join(out_dir, "InRelease")
+
+    for path in (gpg_out, inrelease_out):
+        if os.path.exists(path):
+            os.remove(path)
 
     env = dict(os.environ)
     if gnupghome:
@@ -68,18 +71,23 @@ def sign_release(out_dir, key_id, passphrase, gnupghome=None, require=False):
             sys.exit(1)
         return
 
-    cmd = [gpg, "--batch", "--yes", "--default-key", key_id,
-           "--detach-sign", "--output", gpg_out, release]
+    base_cmd = [gpg, "--batch", "--yes", "--default-key", key_id,
+                "--digest-algo", "SHA256"]
     if passphrase:
-        cmd = [gpg, "--batch", "--yes", "--passphrase", passphrase,
-               "--pinentry-mode", "loopback", "--default-key", key_id,
-               "--detach-sign", "--output", gpg_out, release]
-    proc = subprocess.run(cmd, env=env, capture_output=True, text=True)
-    if proc.returncode != 0 or not os.path.isfile(gpg_out):
-        if require:
-            print(f"error: signing failed: {proc.stderr}", file=sys.stderr)
-            sys.exit(1)
-        return
+        base_cmd.extend(["--pinentry-mode", "loopback", "--passphrase", passphrase])
+
+    targets = [
+        (gpg_out, ["--armor", "--detach-sign", "--output", gpg_out, release]),
+        (inrelease_out, ["--clearsign", "--output", inrelease_out, release]),
+    ]
+
+    for out_path, args in targets:
+        proc = subprocess.run(base_cmd + args, env=env, capture_output=True, text=True)
+        if proc.returncode != 0 or not os.path.isfile(out_path):
+            if require:
+                print(f"error: signing {out_path} failed: {proc.stderr}", file=sys.stderr)
+                sys.exit(1)
+            return
 
 
 def read_deb_control(path):
