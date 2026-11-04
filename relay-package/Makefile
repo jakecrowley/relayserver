@@ -1,5 +1,7 @@
 TARGET := iphone:clang:16.5:14.0
 
+ROOT_DIR := $(shell cd $(patsubst %/,%,$(dir $(abspath $(firstword $(MAKEFILE_LIST)))))/.. && pwd)
+
 include $(THEOS)/makefiles/common.mk
 
 include $(THEOS_MAKE_PATH)/null.mk
@@ -8,7 +10,7 @@ clean::
 	rm -rf $(THEOS_STAGING_DIR) $(_THEOS_STAGING_TMP)
 
 before-package::
-	cd .. && cargo build --release --target aarch64-apple-ios
+	. "$(ROOT_DIR)/scripts/theos-env.sh" && cd .. && cargo build --release --target aarch64-apple-ios
 	$(THEOS)/toolchain/linux/iphone/bin/ldid -S../Entitlements.xml ../target/aarch64-apple-ios/release/relayserver
 	rm -rf $(THEOS_STAGING_DIR)/Library $(THEOS_STAGING_DIR)/usr $(THEOS_STAGING_DIR)/var $(_THEOS_STAGING_TMP)
 	if [ -n "$(THEOS_PACKAGE_INSTALL_PREFIX)" ]; then mkdir -p $(_THEOS_SCHEME_STAGE); fi
