@@ -1,22 +1,6 @@
 [build]
 target = "aarch64-apple-ios"
 
-[target.aarch64-apple-ios]
-linker = "/home/jake/theos/toolchain/linux/iphone/bin/clang"
-ar = "/home/jake/theos/toolchain/linux/iphone/bin/ar"
-rustflags = [
-    "-C", "link-arg=-isysroot",
-    "-C", "link-arg=/home/jake/theos/sdks/iPhoneOS16.5.sdk",
-    "-C", "link-arg=-F/home/jake/theos/sdks/iPhoneOS16.5.sdk/System/Library/Frameworks",
-    "-C", "link-arg=-L/home/jake/theos/sdks/iPhoneOS16.5.sdk/usr/lib",
-    "-C", "link-arg=-target",
-    "-C", "link-arg=arm64-apple-ios14.0",
-]
-
-[env]
-CC_aarch64_apple_ios = "/home/jake/theos/toolchain/linux/iphone/bin/clang"
-CXX_aarch64_apple_ios = "/home/jake/theos/toolchain/linux/iphone/bin/clang++"
-AR_aarch64_apple_ios = "/home/jake/theos/toolchain/linux/iphone/bin/ar"
-CFLAGS_aarch64_apple_ios = "-isysroot /home/jake/theos/sdks/iPhoneOS16.5.sdk -F/home/jake/theos/sdks/iPhoneOS16.5.sdk/System/Library/Frameworks -target arm64-apple-ios14.0"
-SDKROOT = "/home/jake/theos/sdks/iPhoneOS16.5.sdk"
-IPHONEOS_DEPLOYMENT_TARGET = "14.0"
+# Toolchain (linker, ar, cc, SDK paths) is set by scripts/theos-env.sh —
+# cargo config cannot expand environment variables, so those settings live
+# in the env script sourced by relay-package/Makefile and CI.
