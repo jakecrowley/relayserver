@@ -7,6 +7,35 @@ use tokio::{select, sync::{broadcast, mpsc, oneshot, Mutex}, task::JoinHandle};
 use crate::error::RelayError;
 use futures::FutureExt;
 
+pub fn random_bytes<const N: usize>() -> [u8; N] {
+    #[cfg(target_os = "ios")]
+    unsafe {
+        let mut buf = [0u8; N];
+        libc::arc4random_buf(buf.as_mut_ptr() as *mut libc::c_void, N);
+        buf
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        use std::io::Read;
+        let mut buf = [0u8; N];
+        std::fs::File::open("/dev/urandom").unwrap().read_exact(&mut buf).unwrap();
+        buf
+    }
+}
+
+pub fn random_uuid_uppercase() -> String {
+    let b = random_bytes::<16>();
+    let hex: Vec<String> = b.iter().map(|byte| format!("{:02X}", byte)).collect();
+    format!(
+        "{}-{}-{}-{}-{}",
+        hex[0..4].join(""),
+        hex[4..6].join(""),
+        hex[6..8].join(""),
+        hex[8..10].join(""),
+        hex[10..16].join("")
+    )
+}
+
 pub trait Resource: Send + Sync + Sized {
     // resolve when resource is done
     fn generate(self: &Arc<Self>) -> impl std::future::Future<Output = Result<JoinHandle<()>, RelayError>> + Send;
