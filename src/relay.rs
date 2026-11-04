@@ -318,11 +318,34 @@ impl RelayResource {
                         },
                         "get-validation-data" => {
                             println!("Generating validation data!");
-                            ws_stream.send(command.respond(CommandData::ValidationData { data: base64_encode(&generate_validation_data(None, None).await?) })).await?;
+                            let raw: serde_json::Value = serde_json::from_str(&msg).unwrap();
+                            let push_token = extract_push_token(&raw);
+                            let real_udid = mg_copy_answer_rs("UniqueDeviceID");
+                            let (_, udid) = resolve_device_identity_with(&mg_copy_answer_rs("SerialNumber"), Some(&real_udid), &serial_number, &unique_device_id);
+                            let data = generate_validation_data(Some(udid), push_token).await?;
+                            ws_stream.send(command.respond(CommandData::ValidationData { data: base64_encode(&data) })).await?;
                             println!("Sent validation data!");
                         },
+                        "activate" => {
+                            if let Some(id) = command.id {
+                                let response = build_activate_response(id, &serial_number);
+                                ws_stream.send(Message::Text(serde_json::to_string(&response).unwrap())).await?;
+                                println!("Sending activation info: {response}");
+                            } else {
+                                println!("Ignoring activate without id");
+                            }
+                        },
+                        "sign-data" => {
+                            if let Some(id) = command.id {
+                                let response = build_sign_data_response(id);
+                                ws_stream.send(Message::Text(serde_json::to_string(&response).unwrap())).await?;
+                                println!("Sending sign-data response: {response}");
+                            } else {
+                                println!("Ignoring sign-data without id");
+                            }
+                        },
                         "pong" => {},
-                        _raw => panic!("bad command {_raw}"),
+                        _raw => println!("Unhandled command {_raw}"),
                     }
                 },
                 _ = time::sleep_until(last_ping + ping_interval) => {
