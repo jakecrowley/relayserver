@@ -72,12 +72,22 @@ pub fn get_persistent_device_uuid(identifier_for_vendor: Option<&str>, saved: Op
     (crate::util::random_uuid_uppercase(), true)
 }
 
-pub fn resolve_device_identity_with(real_serial: &str, real_udid: Option<&str>, hybrid_serial: &str, hybrid_udid: &str) -> (String, String) {
+pub fn resolve_device_identity_with(
+    real_serial: &str,
+    real_udid: Option<&str>,
+    hybrid_serial: &str,
+    hybrid_udid: &str,
+    use_mac_identity: bool,
+) -> (String, String) {
     let udid = match real_udid {
         Some(u) if !u.is_empty() => u.to_string(),
         _ => hybrid_udid.to_string(),
     };
-    let serial = if real_serial.is_empty() { hybrid_serial.to_string() } else { real_serial.to_string() };
+    let serial = if use_mac_identity || real_serial.is_empty() {
+        hybrid_serial.to_string()
+    } else {
+        real_serial.to_string()
+    };
     (serial, udid)
 }
 
@@ -149,6 +159,7 @@ pub struct RelayResource {
     pub unique_device_id: String,
     /// Client-parity persistent UUID (identifierForVendor or saved UUID).
     pub persistent_device_uuid: String,
+    pub use_mac_identity: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -224,28 +235,33 @@ mod tests {
         // Client (Relay.swift getIdentifiers/getPersistentDeviceUUID): serial = MG
         // SerialNumber, udid = identifierForVendor else persisted UUID. Resolved
         // independently — one falling back must not drag the other with it.
-        let got = resolve_device_identity_with("C02REALSERIAL", Some("AABBCCDD-1234-5678-9ABC-DEF012345678"), "HYBRIDSER", "HYBRIDUDID");
+        let got = resolve_device_identity_with("C02REALSERIAL", Some("AABBCCDD-1234-5678-9ABC-DEF012345678"), "HYBRIDSER", "HYBRIDUDID", false);
         assert_eq!(got.0, "C02REALSERIAL");
         assert_eq!(got.1, "AABBCCDD-1234-5678-9ABC-DEF012345678");
 
         // real serial present, no identifierForVendor -> real serial + saved UUID
-        let got = resolve_device_identity_with("C02REALSERIAL", None, "HYBRIDSER", "HYBRIDUDID");
+        let got = resolve_device_identity_with("C02REALSERIAL", None, "HYBRIDSER", "HYBRIDUDID", false);
         assert_eq!(got.0, "C02REALSERIAL");
         assert_eq!(got.1, "HYBRIDUDID");
 
         // identifierForVendor present but serial missing -> hybrid serial + real UUID
-        let got = resolve_device_identity_with("", Some("AABBCCDD-1234-5678-9ABC-DEF012345678"), "HYBRIDSER", "HYBRIDUDID");
+        let got = resolve_device_identity_with("", Some("AABBCCDD-1234-5678-9ABC-DEF012345678"), "HYBRIDSER", "HYBRIDUDID", false);
         assert_eq!(got.0, "HYBRIDSER");
         assert_eq!(got.1, "AABBCCDD-1234-5678-9ABC-DEF012345678");
 
         // both missing -> hybrid pair
-        let got = resolve_device_identity_with("", None, "HYBRIDSER", "HYBRIDUDID");
+        let got = resolve_device_identity_with("", None, "HYBRIDSER", "HYBRIDUDID", false);
         assert_eq!(got.0, "HYBRIDSER");
         assert_eq!(got.1, "HYBRIDUDID");
 
         // empty ID FV string counts as missing (client: `!vendor.isEmpty`)
-        let got = resolve_device_identity_with("", Some(""), "HYBRIDSER", "HYBRIDUDID");
+        let got = resolve_device_identity_with("", Some(""), "HYBRIDSER", "HYBRIDUDID", false);
         assert_eq!(got.1, "HYBRIDUDID");
+
+        // use_mac_identity = true uses the activation payload serial instead of the iPhone's real serial
+        let got = resolve_device_identity_with("C02REALSERIAL", Some("AABBCCDD-1234-5678-9ABC-DEF012345678"), "HYBRIDSER", "HYBRIDUDID", true);
+        assert_eq!(got.0, "HYBRIDSER");
+        assert_eq!(got.1, "AABBCCDD-1234-5678-9ABC-DEF012345678");
     }
 
     #[test]
@@ -332,9 +348,10 @@ impl Resource for RelayResource {
         let serial_number = self.serial_number.clone();
         let unique_device_id = self.unique_device_id.clone();
         let persistent_device_uuid = self.persistent_device_uuid.clone();
+        let use_mac_identity = self.use_mac_identity;
 
         Ok(tokio::spawn(async move {
-            match RelayResource::poll(ws_stream, serial_number, unique_device_id, persistent_device_uuid).await {
+            match RelayResource::poll(ws_stream, serial_number, unique_device_id, persistent_device_uuid, use_mac_identity).await {
                 Ok(_) => {},
                 Err(err) => {
                     println!("error {err}");
@@ -350,6 +367,7 @@ impl RelayResource {
         serial_number: String,
         unique_device_id: String,
         persistent_device_uuid: String,
+        use_mac_identity: bool,
     ) -> Result<(), RelayError> {
         let ping_interval = Duration::from_secs(60);
         let mut last_ping = Instant::now();
@@ -369,10 +387,20 @@ impl RelayResource {
                     match command.command.as_str() {
                         "get-version-info" => {
                             let uts = uname().unwrap();
-                            let real_serial = mg_copy_answer_rs("SerialNumber");
+                            let real_serial = if use_mac_identity {
+                                String::new()
+                            } else {
+                                mg_copy_answer_rs("SerialNumber")
+                            };
                             // Client parity: udid = identifierForVendor/persisted UUID
-                            // (resolved at startup), serial = MG serial else hybrid.
-                            let (serial_number, unique_device_id) = resolve_device_identity_with(&real_serial, Some(&persistent_device_uuid), &serial_number, &unique_device_id);
+                            // (resolved at startup), serial = MG serial else hybrid (or hybrid when use_mac_identity is set).
+                            let (serial_number, unique_device_id) = resolve_device_identity_with(
+                                &real_serial,
+                                Some(&persistent_device_uuid),
+                                &serial_number,
+                                &unique_device_id,
+                                use_mac_identity,
+                            );
                             ws_stream.send(command.respond(CommandData::Versions { versions: RelayVersions {
                                 hardware_version: uts.machine().to_str().unwrap().to_string(),
                                 software_name: "iPhone OS".to_string(),
@@ -432,6 +460,7 @@ impl RelayResource {
         serial_number: String,
         unique_device_id: String,
         persistent_device_uuid: String,
+        use_mac_identity: bool,
     ) -> Relay {
         let resource = RelayResource {
             url: Mutex::new(url),
@@ -439,6 +468,7 @@ impl RelayResource {
             serial_number,
             unique_device_id,
             persistent_device_uuid,
+            use_mac_identity,
         };
 
         ResourceManager::new(

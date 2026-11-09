@@ -25,6 +25,8 @@ struct RelayConfig {
     serial_number: Option<String>,
     #[serde(default)]
     unique_device_id: Option<String>,
+    #[serde(default)]
+    use_mac_identity: bool,
 }
 
 impl RelayConfig {
@@ -34,6 +36,7 @@ impl RelayConfig {
             state: relay.state.lock().await.clone(),
             serial_number: Some(relay.serial_number.clone()),
             unique_device_id: Some(relay.unique_device_id.clone()),
+            use_mac_identity: relay.use_mac_identity,
         }
     }
 }
@@ -80,7 +83,15 @@ async fn main() {
             .unwrap_or_else(generate_hybrid_udid)
     };
 
-    println!("Using hybrid identity: serial={}, udid={}", serial_number, unique_device_id);
+    let use_mac_identity = config
+        .as_ref()
+        .map(|i| i.use_mac_identity)
+        .unwrap_or(false);
+
+    println!(
+        "Using hybrid identity: serial={}, udid={}, use_mac_identity={}",
+        serial_number, unique_device_id, use_mac_identity
+    );
 
     let relay = RelayResource::new(
         url,
@@ -88,6 +99,7 @@ async fn main() {
         serial_number,
         unique_device_id,
         persistent_device_uuid,
+        use_mac_identity,
     );
 
     let initial_state = RelayConfig::from_relay(&relay).await;
@@ -119,4 +131,21 @@ async fn main() {
     });
 
     std::future::pending::<()>().await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn relay_config_use_mac_identity_defaults_and_roundtrips() {
+        let without_flag: RelayConfig = serde_json::from_str(r#"{"url":"wss://example.com"}"#).unwrap();
+        assert!(!without_flag.use_mac_identity);
+
+        let with_true: RelayConfig = serde_json::from_str(r#"{"url":"wss://example.com","use_mac_identity":true}"#).unwrap();
+        assert!(with_true.use_mac_identity);
+
+        let serialized = serde_json::to_value(&with_true).unwrap();
+        assert_eq!(serialized["use_mac_identity"], serde_json::Value::Bool(true));
+    }
 }
