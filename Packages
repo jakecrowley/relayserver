@@ -29,3 +29,35 @@ Size: 1809382
 SHA256: d7ba392e6717a32e98e3954f1ec6a8fbfe67192c83ab867a2d2ea76bc5f9c397
 MD5sum: 2882b50c84bce782c0e20e4fb9c86282
 SHA1: 99c67dc75ad0f4f388ee98e78679c355ccf4a080
+
+Package: dev.copper.relayserver
+Name: relay-package
+Depends: 
+Description: A background server
+Maintainer: Tae Hagen
+Author: Tae Hagen
+Section: Tools
+Architecture: iphoneos-arm
+Version: 0.0.5
+Installed-Size: 4
+Filename: pool/main/dev.copper.relayserver_0.0.5_iphoneos-arm.deb
+Size: 1809066
+SHA256: ae35ad36dd45b86ce43092ec462d8e84380928a42c707d4df5911da0c826341f
+MD5sum: 9ef1cc4749ca4a3918a68429408a7dcd
+SHA1: f15f5394fb4ebf15091badf04ac43d6b33277df6
+
+Package: dev.copper.relayserver
+Name: relay-package
+Depends: 
+Description: A background server
+Maintainer: Tae Hagen
+Author: Tae Hagen
+Section: Tools
+Architecture: iphoneos-arm64
+Version: 0.0.5
+Installed-Size: 4
+Filename: pool/main/dev.copper.relayserver_0.0.5_iphoneos-arm64.deb
+Size: 1809114
+SHA256: 726c652e8ad36e58874a8ddca88243dd4c4b77ab938615622619b3067df43847
+MD5sum: 56d0a123fb313299f0233a80d3d4093c
+SHA1: 63e462ebc5c3e1c94321738450986a6d13dbfb35
