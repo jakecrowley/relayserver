@@ -73,6 +73,22 @@ static NSNumber * _Nullable NumberOrNil(id value) {
     return copy;
 }
 
+static BOOL OptionalStringsEqual(NSString * _Nullable a, NSString * _Nullable b) {
+    if (a == b) return YES;
+    if (!a || !b) return NO;
+    return [a isEqualToString:b];
+}
+
+- (BOOL)isEqualToConfig:(RelayConfigModel * _Nullable)other {
+    if (!other) return NO;
+    return OptionalStringsEqual(self.url, other.url)
+        && OptionalStringsEqual(self.stateCode, other.stateCode)
+        && OptionalStringsEqual(self.stateSecret, other.stateSecret)
+        && OptionalStringsEqual(self.serialNumber, other.serialNumber)
+        && OptionalStringsEqual(self.uniqueDeviceID, other.uniqueDeviceID)
+        && self.useMacIdentity == other.useMacIdentity;
+}
+
 @end
 
 @implementation RelayStatusModel

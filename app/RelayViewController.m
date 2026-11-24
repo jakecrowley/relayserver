@@ -86,6 +86,7 @@ typedef NS_ENUM(NSInteger, ActionRow) {
 @property (nonatomic, copy, nullable) NSString *connectionError;
 @property (nonatomic, assign) BOOL hasLoadedConfig;
 @property (nonatomic, assign) BOOL hasUnsavedChanges;
+@property (nonatomic, assign) BOOL isEditingTextField;
 @property (nonatomic, assign) BOOL isRestarting;
 @property (nonatomic, assign) BOOL isSaving;
 @property (nonatomic, assign) BOOL justCopiedCode;
@@ -186,7 +187,10 @@ typedef NS_ENUM(NSInteger, ActionRow) {
 
         self.latestStatus = status;
 
-        BOOL shouldSyncConfig = forceReloadConfig || !self.hasLoadedConfig || !self.hasUnsavedChanges;
+        BOOL configChanged = (status.config != nil) && ![self.draftConfig isEqualToConfig:status.config];
+        BOOL shouldSyncConfig = forceReloadConfig
+            || !self.hasLoadedConfig
+            || (!self.hasUnsavedChanges && !self.isEditingTextField && configChanged);
         if (shouldSyncConfig && status.config) {
             self.draftConfig = [status.config copy];
             self.hasLoadedConfig = YES;
@@ -713,6 +717,14 @@ typedef NS_ENUM(NSInteger, ActionRow) {
     }
     self.hasUnsavedChanges = YES;
     self.saveBarButton.enabled = !self.isSaving;
+}
+
+- (void)textFieldDidBeginEditing:(UITextField *)textField {
+    self.isEditingTextField = YES;
+}
+
+- (void)textFieldDidEndEditing:(UITextField *)textField {
+    self.isEditingTextField = NO;
 }
 
 - (BOOL)textFieldShouldReturn:(UITextField *)textField {

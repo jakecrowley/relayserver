@@ -12,6 +12,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 + (instancetype)fromDictionary:(NSDictionary *)dict;
 - (NSDictionary *)toDictionary;
+- (BOOL)isEqualToConfig:(RelayConfigModel * _Nullable)other;
 @end
 
 @interface RelayStatusModel : NSObject
