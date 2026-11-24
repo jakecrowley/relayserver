@@ -146,7 +146,7 @@ pub fn extract_push_token(json: &serde_json::Value) -> Option<String> {
         .or_else(|| find_token(json.get("data")))
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 pub struct RelayState {
     pub code: String,
     pub secret: String,
@@ -374,7 +374,7 @@ impl RelayResource {
         loop {
             select! {
                 msg = ws_stream.next() => {
-                    let Some(msg) = msg else { continue };
+                    let Some(msg) = msg else { break };
                     let msg = match msg {
                         Ok(Message::Text(msg)) => msg,
                         _msg => {

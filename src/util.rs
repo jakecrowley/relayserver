@@ -195,6 +195,17 @@ impl<T: Resource + 'static> ResourceManager<T> {
         Ok(())
     }
 
+    pub async fn connected_since_unix(&self) -> Option<u64> {
+        if !matches!(*self.resource_state.lock().await, ResourceState::Generated) {
+            return None;
+        }
+        let ts = *self.refreshed_at.lock().await;
+        ts.duration_since(SystemTime::UNIX_EPOCH)
+            .ok()
+            .map(|d| d.as_secs())
+            .filter(|&s| s > 0)
+    }
+
     pub async fn request_update(&self) {
         self.retry_signal.send(()).await.unwrap();
     }

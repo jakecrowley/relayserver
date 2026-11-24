@@ -1,61 +1,44 @@
 mod c;
+mod config;
+mod control;
 mod error;
 mod nac;
 mod relay;
 mod util;
 
-use std::sync::Arc;
+use std::{
+    path::PathBuf,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
 
 use base64::engine::general_purpose;
 use base64::Engine;
-use relay::{generate_hybrid_serial, generate_hybrid_udid, get_persistent_device_uuid, Relay, RelayResource, RelayState};
-use serde::{Deserialize, Serialize};
-use tokio::{fs, sync::broadcast};
-
+use config::{RelayConfig, DEFAULT_CONFIG_PATH, DEFAULT_CONTROL_ADDR, DEFAULT_RELAY_URL};
+use control::{start_control_server, ControlState};
+use relay::{generate_hybrid_serial, generate_hybrid_udid, get_persistent_device_uuid, RelayResource};
+use tokio::sync::broadcast;
 
 pub fn base64_encode(data: &[u8]) -> String {
     general_purpose::STANDARD.encode(data)
 }
 
-#[derive(Serialize, Deserialize)]
-struct RelayConfig {
-    url: String,
-    state: Option<RelayState>,
-    #[serde(default)]
-    serial_number: Option<String>,
-    #[serde(default)]
-    unique_device_id: Option<String>,
-    #[serde(default)]
-    use_mac_identity: bool,
-}
-
-impl RelayConfig {
-    async fn from_relay(relay: &Relay) -> RelayConfig {
-        RelayConfig {
-            url: relay.url.lock().await.clone(),
-            state: relay.state.lock().await.clone(),
-            serial_number: Some(relay.serial_number.clone()),
-            unique_device_id: Some(relay.unique_device_id.clone()),
-            use_mac_identity: relay.use_mac_identity,
-        }
-    }
-}
-
 #[tokio::main]
 async fn main() {
-    let config_path = "/var/mobile/config.json";
+    let config_path = PathBuf::from(
+        std::env::var("RELAY_CONFIG_PATH").unwrap_or_else(|_| DEFAULT_CONFIG_PATH.to_string()),
+    );
+    let control_addr =
+        std::env::var("RELAY_CONTROL_ADDR").unwrap_or_else(|_| DEFAULT_CONTROL_ADDR.to_string());
 
-    let mut config: Option<RelayConfig> = None;
-    if let Ok(read) = fs::read_to_string(config_path).await {
-        if let Ok(item) = serde_json::from_str(&read) {
-            config = Some(item);
-        }
-    }
+    let config = RelayConfig::load_sync(&config_path);
 
     let url = config
         .as_ref()
         .map(|i| i.url.clone())
-        .unwrap_or_else(|| "wss://registration-relay.beeper.com/api/v1/provider".to_string());
+        .unwrap_or_else(|| DEFAULT_RELAY_URL.to_string());
 
     let serial_number = config
         .as_ref()
@@ -103,27 +86,58 @@ async fn main() {
     );
 
     let initial_state = RelayConfig::from_relay(&relay).await;
-    if let Err(e) = std::fs::write(config_path, serde_json::to_string_pretty(&initial_state).unwrap()) {
-        eprintln!("Failed to write initial config to {}: {}", config_path, e);
+    if let Err(e) = initial_state.save_atomic(&config_path) {
+        eprintln!(
+            "Failed to write initial config to {}: {}",
+            config_path.display(),
+            e
+        );
     } else {
-        println!("Wrote initial config to {}", config_path);
+        println!("Wrote initial config to {}", config_path.display());
+    }
+
+    let pending_restart = Arc::new(AtomicBool::new(false));
+
+    let control_state = ControlState {
+        relay: relay.clone(),
+        config_path: config_path.clone(),
+        pending_restart: pending_restart.clone(),
+        restart_fn: Arc::new(|| {
+            println!("Restart requested via control API; exiting for launchd respawn");
+            std::process::exit(0);
+        }),
+    };
+    if let Err(e) = start_control_server(&control_addr, control_state).await {
+        eprintln!("Failed to start control server on {}: {}", control_addr, e);
     }
 
     let mut to_refresh = relay.generated_signal.subscribe();
     let reconn_conn = Arc::downgrade(&relay);
+    let refresh_config_path = config_path.clone();
+    let refresh_pending_restart = pending_restart.clone();
     tokio::spawn(async move {
         loop {
             match to_refresh.recv().await {
                 Ok(()) => {
                     let Some(conn) = reconn_conn.upgrade() else { break };
+                    if refresh_pending_restart.load(Ordering::SeqCst) {
+                        println!(
+                            "Skipping config write on reconnect because user edits are pending restart"
+                        );
+                        continue;
+                    }
                     // update keys
                     let state = RelayConfig::from_relay(&conn).await;
-                    if let Err(e) = std::fs::write(config_path, serde_json::to_string_pretty(&state).unwrap()) {
-                        eprintln!("Failed to write updated config to {}: {}", config_path, e);
+                    if let Err(e) = state.save_atomic(&refresh_config_path) {
+                        eprintln!(
+                            "Failed to write updated config to {}: {}",
+                            refresh_config_path.display(),
+                            e
+                        );
                     } else {
-                        println!("Updated config at {}", config_path);
+                        println!("Updated config at {}", refresh_config_path.display());
                     }
-                },
+                }
                 Err(broadcast::error::RecvError::Lagged(_)) => continue,
                 Err(broadcast::error::RecvError::Closed) => break,
             }
@@ -131,21 +145,4 @@ async fn main() {
     });
 
     std::future::pending::<()>().await;
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn relay_config_use_mac_identity_defaults_and_roundtrips() {
-        let without_flag: RelayConfig = serde_json::from_str(r#"{"url":"wss://example.com"}"#).unwrap();
-        assert!(!without_flag.use_mac_identity);
-
-        let with_true: RelayConfig = serde_json::from_str(r#"{"url":"wss://example.com","use_mac_identity":true}"#).unwrap();
-        assert!(with_true.use_mac_identity);
-
-        let serialized = serde_json::to_value(&with_true).unwrap();
-        assert_eq!(serialized["use_mac_identity"], serde_json::Value::Bool(true));
-    }
 }
