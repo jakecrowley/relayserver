@@ -4,14 +4,14 @@ Suite: stable
 Codename: stable
 Components: main
 Architectures: iphoneos-arm iphoneos-arm64
-Date: Tue, 24 Nov 2026 03:10:34 UTC
+Date: Tue, 24 Nov 2026 03:50:47 UTC
 
 SHA256:
- c8f53da73a92e99b94ddedbea9117a97f9e0fab88eb700e655c38d3659a96417 2807 Packages
- 3de64bace143e168cf1785d4db52ef4585bebb5efb6ee7a804ea72af6d15c51c 885 Packages.gz
+ 2a60d6b4a666a256d2e703b9cabdb7b732ca4038fd9d33e2ad5c08259f2e5e1d 3799 Packages
+ 8b8ab00a4fa452679d02191b50ca9e0d63abd698ac3c24a8d87810c11d119c3a 1089 Packages.gz
 MD5sum:
- c7c1f9b45fafb310052a33c95860b2b4 2807 Packages
- afe44a3ad57c3b5b31d27c2767582247 885 Packages.gz
+ c13828ab66d351a39b585d4920c5a3a3 3799 Packages
+ 6b5f8cbf8af6caba971e91aee4973f4d 1089 Packages.gz
 SHA1:
- a748b4a010889f58f39e319eb21917c75d45b894 2807 Packages
- 5c9c14a53535ef0ebdc7fe6aaf60a9450516ef64 885 Packages.gz
+ 47528df7a8ca3d1a884db8ec39bc5ff0a273f4c0 3799 Packages
+ 16601ec62e2c4b55da063ef361a81d062c29d590 1089 Packages.gz
