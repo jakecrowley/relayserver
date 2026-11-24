@@ -4,3 +4,9 @@ if [ -f /var/jb/Library/LaunchDaemons/dev.copper.relayserver.plist ]; then
 else
     launchctl load /Library/LaunchDaemons/dev.copper.relayserver.plist
 fi
+if [ -d /var/jb/Applications/RelayServer.app ]; then
+    /var/jb/usr/bin/uicache -p /var/jb/Applications/RelayServer.app >/dev/null 2>&1 || uicache -p /var/jb/Applications/RelayServer.app >/dev/null 2>&1 || true
+elif [ -d /Applications/RelayServer.app ]; then
+    uicache -p /Applications/RelayServer.app >/dev/null 2>&1 || true
+fi
+exit 0

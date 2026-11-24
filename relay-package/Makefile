@@ -12,16 +12,23 @@ clean::
 before-package::
 	. "$(ROOT_DIR)/scripts/theos-env.sh" && cd .. && cargo build --release --target aarch64-apple-ios
 	$(THEOS)/toolchain/linux/iphone/bin/ldid -S../Entitlements.xml ../target/aarch64-apple-ios/release/relayserver
-	rm -rf $(THEOS_STAGING_DIR)/Library $(THEOS_STAGING_DIR)/usr $(THEOS_STAGING_DIR)/var $(_THEOS_STAGING_TMP)
+	rm -rf $(THEOS_STAGING_DIR)/Applications $(THEOS_STAGING_DIR)/Library $(THEOS_STAGING_DIR)/usr $(THEOS_STAGING_DIR)/var $(_THEOS_STAGING_TMP)
 	if [ -n "$(THEOS_PACKAGE_INSTALL_PREFIX)" ]; then mkdir -p $(_THEOS_SCHEME_STAGE); fi
-	cp -f layout/DEBIAN/preinst layout/DEBIAN/postinst layout/DEBIAN/prerm $(THEOS_STAGING_DIR)/DEBIAN/
-	chmod 755 $(THEOS_STAGING_DIR)/DEBIAN/preinst $(THEOS_STAGING_DIR)/DEBIAN/postinst $(THEOS_STAGING_DIR)/DEBIAN/prerm
+	cp -f layout/DEBIAN/preinst layout/DEBIAN/postinst layout/DEBIAN/prerm layout/DEBIAN/postrm $(THEOS_STAGING_DIR)/DEBIAN/
+	chmod 755 $(THEOS_STAGING_DIR)/DEBIAN/preinst $(THEOS_STAGING_DIR)/DEBIAN/postinst $(THEOS_STAGING_DIR)/DEBIAN/prerm $(THEOS_STAGING_DIR)/DEBIAN/postrm
 	mkdir -p $(THEOS_STAGING_DIR)/usr/local/bin
 	cp ../target/aarch64-apple-ios/release/relayserver $(THEOS_STAGING_DIR)/usr/local/bin/relayserver
 	chmod 755 $(THEOS_STAGING_DIR)/usr/local/bin/relayserver
 	mkdir -p $(THEOS_STAGING_DIR)/Library/LaunchDaemons
 	python3 -c 'import plistlib; p = "$(THEOS_PACKAGE_INSTALL_PREFIX)/usr/local/bin/relayserver"; plistlib.dump({"ExecuteAllowed": True, "KeepAlive": True, "RunAtLoad": True, "Label": "dev.copper.relayserver", "Program": p, "ProgramArguments": [p], "WorkingDirectory": "/var/mobile", "StandardOutPath": "/var/mobile/relayserver.log", "StandardErrorPath": "/var/mobile/relayserver.log"}, open("$(THEOS_STAGING_DIR)/Library/LaunchDaemons/dev.copper.relayserver.plist", "wb"), fmt=plistlib.FMT_BINARY)'
 	chmod 644 $(THEOS_STAGING_DIR)/Library/LaunchDaemons/dev.copper.relayserver.plist
+	mkdir -p $(THEOS_STAGING_DIR)/Applications/RelayServer.app
+	$(THEOS)/toolchain/linux/iphone/bin/clang -isysroot $(THEOS)/sdks/iPhoneOS16.5.sdk -F$(THEOS)/sdks/iPhoneOS16.5.sdk/System/Library/Frameworks -target arm64-apple-ios10.0 -fobjc-arc -O2 -Wall -Wno-unused-parameter -framework UIKit -framework Foundation ../app/main.m ../app/AppDelegate.m ../app/RelayClient.m ../app/RelayViewController.m -o $(THEOS_STAGING_DIR)/Applications/RelayServer.app/RelayServer
+	$(THEOS)/toolchain/linux/iphone/bin/ldid -S../app/Entitlements.plist $(THEOS_STAGING_DIR)/Applications/RelayServer.app/RelayServer
+	chmod 755 $(THEOS_STAGING_DIR)/Applications/RelayServer.app/RelayServer
+	cp ../app/Info.plist $(THEOS_STAGING_DIR)/Applications/RelayServer.app/Info.plist
+	cp ../app/Resources/*.png $(THEOS_STAGING_DIR)/Applications/RelayServer.app/
+	chmod 644 $(THEOS_STAGING_DIR)/Applications/RelayServer.app/Info.plist $(THEOS_STAGING_DIR)/Applications/RelayServer.app/*.png
 	sed -i 's/^Architecture:.*/Architecture: $(THEOS_PACKAGE_ARCH)/' $(THEOS_STAGING_DIR)/DEBIAN/control
 
 both:
