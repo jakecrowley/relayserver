@@ -209,6 +209,11 @@ typedef NS_ENUM(NSInteger, ActionRow) {
 
 - (void)updateStatusSectionAndControls {
     self.saveBarButton.enabled = self.hasUnsavedChanges && !self.isSaving;
+    if (self.isEditingTextField) {
+        // Avoid mutating the table view while a text field is focused; on iOS 16
+        // beginUpdates/endUpdates dismisses UIEditMenuInteraction (Copy/Paste menu).
+        return;
+    }
     BOOL shouldShowPending = (self.latestStatus != nil && self.latestStatus.pendingRestart);
     BOOL wasShowingPending = self.showingPendingRestartRow;
     self.showingPendingRestartRow = shouldShowPending;
@@ -725,6 +730,7 @@ typedef NS_ENUM(NSInteger, ActionRow) {
 
 - (void)textFieldDidEndEditing:(UITextField *)textField {
     self.isEditingTextField = NO;
+    [self updateStatusSectionAndControls];
 }
 
 - (BOOL)textFieldShouldReturn:(UITextField *)textField {
