@@ -9,6 +9,9 @@ fn main() {
     let theos = std::env::var("THEOS").unwrap_or_else(|_| "/home/jake/theos".to_string());
     let sdk = format!("{}/sdks/iPhoneOS16.5.sdk", theos);
 
+    println!("cargo:rerun-if-changed=src/c/relay.c");
+    println!("cargo:rerun-if-changed=src/c/absdUser.c");
+    println!("cargo:rerun-if-changed=src/c/absd.h");
     println!("cargo:rustc-link-lib=dylib=MobileGestalt");
     println!("cargo:rustc-link-lib=framework=CoreFoundation");
 

@@ -73,17 +73,35 @@ char* mg_copy_answer(const char* firstProperty) {
 #import <objc/runtime.h>
 
 // Relay.swift getPersistentDeviceUUID: UIDevice.current.identifierForVendor?.uuidString
-// ("" when unavailable; the fallback/persistence logic lives in Rust).
+// Note: Objective-C NSUUID selector is `UUIDString` (Swift bridges it to `uuidString`).
+// Returns "" when unavailable; the fallback/persistence logic lives in Rust.
 char* device_identifier_for_vendor(void) {
-    id device = ((id (*)(id, SEL))objc_msgSend)((id)objc_getClass("UIDevice"), sel_registerName("currentDevice"));
+    Class uiDeviceClass = objc_getClass("UIDevice");
+    if (!uiDeviceClass) {
+        return copy_cf_string_to_buf(CFSTR(""));
+    }
+    SEL respondsSel = sel_registerName("respondsToSelector:");
+    SEL currentDeviceSel = sel_registerName("currentDevice");
+    if (!((BOOL (*)(id, SEL, SEL))objc_msgSend)((id)uiDeviceClass, respondsSel, currentDeviceSel)) {
+        return copy_cf_string_to_buf(CFSTR(""));
+    }
+    id device = ((id (*)(id, SEL))objc_msgSend)((id)uiDeviceClass, currentDeviceSel);
     if (!device) {
         return copy_cf_string_to_buf(CFSTR(""));
     }
-    id vendor = ((id (*)(id, SEL))objc_msgSend)(device, sel_registerName("identifierForVendor"));
+    SEL idfvSel = sel_registerName("identifierForVendor");
+    if (!((BOOL (*)(id, SEL, SEL))objc_msgSend)(device, respondsSel, idfvSel)) {
+        return copy_cf_string_to_buf(CFSTR(""));
+    }
+    id vendor = ((id (*)(id, SEL))objc_msgSend)(device, idfvSel);
     if (!vendor) {
         return copy_cf_string_to_buf(CFSTR(""));
     }
-    id uuid_string = ((id (*)(id, SEL))objc_msgSend)(vendor, sel_registerName("uuidString"));
+    SEL uuidStrSel = sel_registerName("UUIDString");
+    if (!((BOOL (*)(id, SEL, SEL))objc_msgSend)(vendor, respondsSel, uuidStrSel)) {
+        return copy_cf_string_to_buf(CFSTR(""));
+    }
+    id uuid_string = ((id (*)(id, SEL))objc_msgSend)(vendor, uuidStrSel);
     if (!uuid_string) {
         return copy_cf_string_to_buf(CFSTR(""));
     }
