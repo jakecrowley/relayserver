@@ -45,7 +45,7 @@ pub trait Resource: Send + Sync + Sized {
             std::panic::AssertUnwindSafe(self.generate())
                 .catch_unwind().await
                 .map_err(|e| {
-                    println!("paniced with {:?}", e.downcast_ref::<&str>());
+                    println!("panicked with {:?}", e.downcast_ref::<&str>());
                     RelayError::ResourcePanic(e.downcast_ref::<&str>().unwrap_or(&"failed to str!").to_string())
                 })
                 .and_then(|a| a)
